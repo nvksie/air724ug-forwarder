@@ -8,12 +8,16 @@ module(..., package.seeall)
 
 -- MQTT 客户端实例
 local mqttc
-
+-- 本机号码
+local phone_number = util_mobile.getNumber()
 -- 初始化 MQTT 客户端
 local function init()
     -- MQTT 客户端配置
-    mqttc = mqtt.client(config.MQTT_CLIENT_ID .. misc.getImei(), -- 客户端ID
-    config.MQTT_KEEPALIVE or 300 -- keepAlive时间（秒）
+
+    mqttc = mqtt.client(config.MQTT_CLIENT_ID .. phone_number, -- 客户端ID
+    config.MQTT_KEEPALIVE or 300, -- keepAlive时间（秒）
+    config.MQTT_USER,  -- RabbitMQ 用户名
+    config.MQTT_PASSWORD -- RabbitMQ 密码
     )
 end
 
@@ -21,7 +25,7 @@ end
 local function handleMessage(packet)
     log.info("MQTT", "收到消息", packet.topic, packet.payload)
     local messageJson = json.decode(packet.payload)
-    local topic = config.MQTT_CLIENT_ID .. misc.getImei()
+    local topic = config.MQTT_CLIENT_ID .. phone_number
 
     if packet.topic == topic then
         -- 处理命令消息

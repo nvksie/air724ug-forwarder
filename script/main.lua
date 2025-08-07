@@ -32,6 +32,8 @@ require "handler_powerkey"
 require "handler_sms"
 require "usbmsc"
 require "handler_mqtt"
+require "handler_airtun"
+
 
 -- 输出音频通道选项, 0:听筒 1:耳机 2:喇叭
 -- 输入音频通道选项, 0:main_mic 1:auxiliary_mic 3:headphone_mic_left 4:headphone_mic_right
