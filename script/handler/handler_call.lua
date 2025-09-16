@@ -1,3 +1,6 @@
+require "cc"
+
+module(..., package.seeall)
 ------------------------------------------------- Config --------------------------------------------------
 -- 是否开启录音上传
 local record_enable = nvm.get("UPLOAD_URL") and nvm.get("UPLOAD_URL") ~= ""
@@ -38,6 +41,11 @@ CALL_NUMBER = ""
 local CALL_CONNECTED_TIME = 0
 local CALL_DISCONNECTED_TIME = 0
 local CALL_RECORD_START_TIME = 0
+
+-- 添加标志位表示是否是主动拨号播放TTS
+local IS_DIAL_AND_PLAY_TTS = false
+local DIAL_TTS_TEXT = nil
+local IS_DIAL_AND_PLAY_AMR = false
 
 local function getCallInAction()
     -- 动作为接听, 但录音上传未开启
@@ -207,7 +215,10 @@ end
 -- TTS 播放结束回调
 local function ttsCallback(result)
     log.info("handler_call.ttsCallback", "result:", result)
-
+    -- 删除临时文件如果存在的话 
+    if io.exists("/lua/temp.amr") then
+        os.remove("/lua/temp.amr")
+    end
     -- 判断来电动作是否为接听后挂断
     if getCallInAction() == 3 then
         -- 如果是接听后挂断, 则不录音, 直接返回
@@ -304,8 +315,26 @@ local function callConnectedCallback(num)
 
     -- 停止之前的播放
     audio.stop()
-    -- 向对方播放留言提醒 TTS
-    sys.timerStart(tts, 1000 * 1)
+
+    -- 判断是否是主动拨号播放TTS的场景
+    if IS_DIAL_AND_PLAY_TTS and DIAL_TTS_TEXT then
+        if IS_DIAL_AND_PLAY_AMR then
+            log.info("handler_call.callConnectedCallback", "主动拨号播放[AMR]", "number:", num, "text:", DIAL_TTS_TEXT)
+            util_audio.audioStream("/lua/temp.amr", ttsCallback)
+        else
+            log.info("handler_call.callConnectedCallback", "主动拨号播放TTS", "number:", num, "text:", DIAL_TTS_TEXT)
+            sys.timerStart(playCustomTts, 1000, DIAL_TTS_TEXT)
+        end
+
+        -- 重置标志位和文本
+        IS_DIAL_AND_PLAY_TTS = false
+        DIAL_TTS_TEXT = nil
+        IS_DIAL_AND_PLAY_AMR = false
+    else
+        -- 向对方播放留言提醒 TTS
+        log.info("handler_call.callConnectedCallback", "向对方播放留言提醒 TTS", "number:", num, "text:", DIAL_TTS_TEXT)
+        sys.timerStart(tts, 1000 * 1)
+    end
 
     -- 最大通话时间后, 结束通话
     sys.timerStart(cc.hangUp, call_max_time * 1000, num)
@@ -364,3 +393,32 @@ sys.taskInit(function()
         end
     end
 end)
+
+-- 播放自定义 TTS
+function playCustomTts(text)
+    audio.setTTSSpeed(60)
+    audio.play(7, "TTS", text, 7, ttsCallback)
+end
+
+function dialAndPlayTts(number, text, playAmr)
+    if not number or number == "" then
+        log.warn("handler_call.dialAndPlayTts", "号码为空")
+        return false
+    end
+
+    if not text or text == "" then
+        log.warn("handler_call.dialAndPlayTts", "TTS文本为空")
+        return false
+    end
+
+    -- 设置标志位和文本
+    IS_DIAL_AND_PLAY_TTS = true
+    DIAL_TTS_TEXT = text
+    IS_DIAL_AND_PLAY_AMR = playAmr
+
+    -- 拨号
+    cc.dial(number)
+
+    log.info("handler_call.dialAndPlayTts", "开始拨号:", number, "TTS文本:", text)
+    return true
+end

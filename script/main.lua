@@ -31,6 +31,9 @@ require "handler_call"
 require "handler_powerkey"
 require "handler_sms"
 require "usbmsc"
+require "handler_mqtt"
+require "handler_airtun"
+
 
 -- 输出音频通道选项, 0:听筒 1:耳机 2:喇叭
 -- 输入音频通道选项, 0:main_mic 1:auxiliary_mic 3:headphone_mic_left 4:headphone_mic_right
@@ -49,6 +52,7 @@ audiocore.setpa(audiocore.CLASS_D)
 -- 配置外部 PA
 -- pins.setup(pio.P0_14, 0)
 -- audiocore.pa(pio.P0_14, 1, 0, 0)
+
 -- audio.setChannel(1)
 
 -- 设置睡眠等待时间
@@ -96,11 +100,17 @@ pins.setup(23, function(msg)
 end, pio.PULLUP)
 
 sys.taskInit(function()
-    -- 等待网络就绪
-    sys.waitUntil("IP_READY_IND", 1000 * 60 * 2)
 
-    -- 等待获取 Band 值
-    -- sys.wait(1000 * 5)
+    -- 等待网络就绪
+    while true do
+        if sys.waitUntil("IP_READY_IND", 1000 * 60 * 2) then
+            log.info("NET", "网络已就绪")
+            break
+        else
+            log.warn("NET", "网络连接超时，准备重启")
+            rtos.reboot()
+        end
+    end
 
     -- 开机通知
     if nvm.get("BOOT_NOTIFY") then
