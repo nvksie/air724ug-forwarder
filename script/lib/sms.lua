@@ -265,6 +265,81 @@ function gsm8bitdecode(data)
     return ucsdata, lpcnt
 end
 
+-- A simple UTF-16BE to UTF-8 conversion function without the 'bit' library
+local function utf16be2utf8(data)
+  if data == nil or #data == 0 then
+    return ""
+  end
+
+  local result = {}
+  local i = 1
+  while i <= #data do
+    -- Check if there are at least 2 bytes left for a full character
+    if i + 1 > #data then
+      -- Incomplete character at the end of the string.
+      -- You can choose to break or handle this as an error.
+      break
+    end
+
+    -- Read two bytes, form a 16-bit code unit (big-endian)
+    local b1 = data:byte(i)
+    local b2 = data:byte(i + 1)
+    local code_unit = b1 * 256 + b2
+    i = i + 2
+
+    local unicode_codepoint
+
+    -- Check for surrogate pair
+    if code_unit >= 0xD800 and code_unit <= 0xDBFF then
+      -- High surrogate
+      local high_surrogate = code_unit
+      if i > #data then
+        break
+      end
+      local low_surrogate = data:byte(i) * 256 + data:byte(i + 1)
+      i = i + 2
+      if low_surrogate >= 0xDC00 and low_surrogate <= 0xDFFF then
+        -- Low surrogate
+        unicode_codepoint = 0x10000 + (high_surrogate - 0xD800) * 0x400 + (low_surrogate - 0xDC00)
+      else
+        unicode_codepoint = 0xFFFD -- Replacement character
+      end
+    else
+      -- Not a surrogate pair
+      unicode_codepoint = code_unit
+    end
+
+    -- Convert Unicode codepoint to UTF-8
+    if unicode_codepoint <= 0x7F then
+      -- 1-byte UTF-8
+      result[#result + 1] = string.char(unicode_codepoint)
+    elseif unicode_codepoint <= 0x7FF then
+      -- 2-byte UTF-8
+      result[#result + 1] = string.char(
+        0xC0 + math.floor(unicode_codepoint / 64),
+        0x80 + math.fmod(unicode_codepoint, 64)
+      )
+    elseif unicode_codepoint <= 0xFFFF then
+      -- 3-byte UTF-8
+      result[#result + 1] = string.char(
+        0xE0 + math.floor(unicode_codepoint / 4096),
+        0x80 + math.floor(math.fmod(unicode_codepoint, 4096) / 64),
+        0x80 + math.fmod(unicode_codepoint, 64)
+      )
+    elseif unicode_codepoint <= 0x10FFFF then
+      -- 4-byte UTF-8
+      result[#result + 1] = string.char(
+        0xF0 + math.floor(unicode_codepoint / 262144),
+        0x80 + math.floor(math.fmod(unicode_codepoint, 262144) / 4096),
+        0x80 + math.floor(math.fmod(unicode_codepoint, 4096) / 64),
+        0x80 + math.fmod(unicode_codepoint, 64)
+      )
+    end
+  end
+
+  return table.concat(result)
+end
+
 --[[
 函数名：rsp
 功能  ：AT应答
@@ -619,7 +694,7 @@ local function readcnf(result, num, data, pos, datetime, name, total, idx, isn)
         end
         if data then
             --短信内容转换为utf8字符串格式
-            data = common.ucs2beToUtf8(data:fromHex())
+            data = utf16be2utf8(data:fromHex())
             --用户应用程序处理短信
             if newsmscb then newsmscb(num, data, datetime) end
         end
@@ -638,8 +713,8 @@ end
 local function longsmsmergecnf(res, num, data, datetime)
     --log.info("longsmsmergecnf",num,data,datetime)
     if data then
-        --短信内容转换为GB2312字符串格式
-        data = common.ucs2beToUtf8(data:fromHex())
+        --短信内容转换为utf8字符串格式
+        data = utf16be2utf8(data:fromHex())
         --用户应用程序处理短信
         if newsmscb then newsmscb(num, data, datetime) end
     end
